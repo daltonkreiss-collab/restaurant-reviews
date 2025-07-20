@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, Button, Linking, FlatList, Image, ScrollView, Dimensions } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, Text, TouchableOpacity, Linking, FlatList, Image, ScrollView, Dimensions, StyleSheet, Animated } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 // Example bathroom photo URLs
@@ -90,6 +90,8 @@ const reviews: { [key: string]: Review[] } = {
 };
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
+const CAROUSEL_ITEM_WIDTH = SCREEN_WIDTH * 0.7;
+const CAROUSEL_SIDE_WIDTH = (SCREEN_WIDTH - CAROUSEL_ITEM_WIDTH) / 2;
 
 export default function VenueDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -97,6 +99,9 @@ export default function VenueDetailsScreen() {
   const venueId = Array.isArray(id) ? id[0] : id;
   const venue = venues.find(v => v.id === venueId);
   const venueReviews = venueId && reviews[venueId] ? reviews[venueId] : [];
+
+  // Carousel state
+  const scrollX = useRef(new Animated.Value(0)).current;
 
   if (!venue) {
     return (
@@ -107,53 +112,172 @@ export default function VenueDetailsScreen() {
   }
 
   return (
-    <View style={{ flex: 1, padding: 16 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16 }}>
-        <View style={{ flex: 1, marginRight: 16 }}>
-          <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 8 }}>{venue.name}</Text>
-          <Text style={{ color: 'blue', marginBottom: 8 }} onPress={() => Linking.openURL(venue.googleMapsUrl)}>
-            View on Google Maps
-          </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8, alignItems: 'center', gap: 12 }}>
-            <Text>Privacy: {venue.scores.privacy} ⭐</Text>
-            <Text>Availability: {venue.scores.availability} ⭐</Text>
-            <Text>Cleanliness: {venue.scores.cleanliness} ⭐</Text>
-            <Text>Vibe: {venue.scores.vibe} ⭐</Text>
-            <Text>Safety & Security: {venue.scores.safety} ⭐</Text>
-          </View>
-          <Text style={{ marginBottom: 4 }}>Doorman Score: {venue.scores.doorman} ⭐</Text>
-          <Text style={{ marginBottom: 8 }}>Security Score: {venue.scores.security} ⭐</Text>
-        </View>
-        <ScrollView
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          style={{ width: SCREEN_WIDTH * 0.45, height: 180 }}
-        >
-          {venue.photos.map((uri, idx) => (
-            <Image
-              key={idx}
-              source={{ uri }}
-              style={{ width: SCREEN_WIDTH * 0.45, height: 180, borderRadius: 12, marginRight: 8 }}
-              resizeMode="cover"
-            />
-          ))}
-        </ScrollView>
+    <ScrollView style={{ flex: 1, backgroundColor: '#fff' }} contentContainerStyle={{ paddingBottom: 32 }}>
+      {/* Header: Venue Name */}
+      <Text style={styles.venueName}>{venue.name}</Text>
+      {/* Google Maps Link */}
+      <TouchableOpacity onPress={() => Linking.openURL(venue.googleMapsUrl)}>
+        <Text style={styles.mapsLink}>View on Google Maps</Text>
+      </TouchableOpacity>
+      {/* Bathroom Sub-scores */}
+      <View style={styles.scoresContainer}>
+        <Text style={styles.scoreLine}>Privacy: <Text style={styles.scoreValue}>{venue.scores.privacy} ⭐</Text></Text>
+        <Text style={styles.scoreLine}>Availability: <Text style={styles.scoreValue}>{venue.scores.availability} ⭐</Text></Text>
+        <Text style={styles.scoreLine}>Cleanliness: <Text style={styles.scoreValue}>{venue.scores.cleanliness} ⭐</Text></Text>
+        <Text style={styles.scoreLine}>Vibe: <Text style={styles.scoreValue}>{venue.scores.vibe} ⭐</Text></Text>
+        <Text style={styles.scoreLine}>Safety & Security: <Text style={styles.scoreValue}>{venue.scores.safety} ⭐</Text></Text>
       </View>
-      <Button title="Add Review" onPress={() => router.push({ pathname: '/(tabs)/add-review', params: { id: venue.id } })} />
-      <Text style={{ fontSize: 18, marginTop: 24, marginBottom: 8 }}>Reviews</Text>
+      {/* Photo Carousel */}
+      <View style={styles.carouselWrapper}>
+        <Animated.FlatList
+          data={venue.photos}
+          keyExtractor={(_, idx) => idx.toString()}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={CAROUSEL_ITEM_WIDTH}
+          decelerationRate="fast"
+          bounces={false}
+          contentContainerStyle={{ paddingHorizontal: CAROUSEL_SIDE_WIDTH }}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: false }
+          )}
+          renderItem={({ item, index }) => {
+            const inputRange = [
+              (index - 1) * CAROUSEL_ITEM_WIDTH,
+              index * CAROUSEL_ITEM_WIDTH,
+              (index + 1) * CAROUSEL_ITEM_WIDTH,
+            ];
+            const scale = scrollX.interpolate({
+              inputRange,
+              outputRange: [0.85, 1, 0.85],
+              extrapolate: 'clamp',
+            });
+            return (
+              <Animated.View style={{
+                width: CAROUSEL_ITEM_WIDTH,
+                alignItems: 'center',
+                transform: [{ scale }],
+              }}>
+                <Image
+                  source={{ uri: item }}
+                  style={styles.carouselImage}
+                  resizeMode="cover"
+                />
+              </Animated.View>
+            );
+          }}
+        />
+      </View>
+      {/* Add Review Button */}
+      <TouchableOpacity
+        style={styles.addReviewButton}
+        onPress={() => router.push({ pathname: '/(tabs)/add-review', params: { id: venue.id } })}
+        activeOpacity={0.85}
+      >
+        <View style={styles.buttonLine} />
+        <Text style={styles.addReviewButtonText}>Add review</Text>
+      </TouchableOpacity>
+      {/* Reviews */}
+      <Text style={styles.reviewsHeader}>Reviews</Text>
       <FlatList
-        data={venueReviews}
+        data={venueReviews.sort((a, b) => b.timestamp.localeCompare(a.timestamp))}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <View style={{ marginBottom: 12, padding: 8, borderWidth: 1, borderColor: '#eee', borderRadius: 8 }}>
+          <View style={styles.reviewCard}>
             <Text style={{ fontWeight: 'bold' }}>{item.username} ({item.rating} ⭐)</Text>
             <Text style={{ color: '#888', fontSize: 12 }}>{item.timestamp}</Text>
             <Text>{item.text}</Text>
           </View>
         )}
-        ListEmptyComponent={<Text>No reviews yet.</Text>}
+        ListEmptyComponent={<Text style={{ marginLeft: 16 }}>No reviews yet.</Text>}
+        scrollEnabled={false}
       />
-    </View>
+    </ScrollView>
   );
-} 
+}
+
+const styles = StyleSheet.create({
+  venueName: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 24,
+    marginBottom: 4,
+  },
+  mapsLink: {
+    color: '#1976D2',
+    textAlign: 'center',
+    textDecorationLine: 'underline',
+    marginBottom: 18,
+    fontSize: 16,
+  },
+  scoresContainer: {
+    marginBottom: 18,
+    paddingHorizontal: 24,
+  },
+  scoreLine: {
+    fontSize: 18,
+    marginBottom: 4,
+    textAlign: 'left',
+  },
+  scoreValue: {
+    fontWeight: 'bold',
+  },
+  carouselWrapper: {
+    marginBottom: 24,
+    alignItems: 'center',
+  },
+  carouselImage: {
+    width: CAROUSEL_ITEM_WIDTH - 16,
+    height: 180,
+    borderRadius: 16,
+    marginHorizontal: 8,
+    borderWidth: 2,
+    borderColor: '#eee',
+  },
+  addReviewButton: {
+    backgroundColor: '#D32F2F',
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 48,
+    marginBottom: 24,
+    marginTop: 8,
+    height: 56,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  addReviewButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    zIndex: 2,
+  },
+  buttonLine: {
+    position: 'absolute',
+    top: '50%',
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: '#fff',
+    opacity: 0.7,
+    zIndex: 1,
+  },
+  reviewsHeader: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 8,
+    marginBottom: 8,
+    marginLeft: 16,
+  },
+  reviewCard: {
+    marginBottom: 12,
+    marginHorizontal: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 10,
+    backgroundColor: '#fafafa',
+  },
+}); 
